@@ -1,28 +1,52 @@
 <template>
   <div id="app">
-    <img alt="Vue logo" src="./assets/logo.png">
-    <HelloWorld msg="Welcome to Your Vue.js App"/>
+    <ConnectFour :username="username" />
+    <ChatComponent :gameId="username" :username="username" />
   </div>
 </template>
 
 <script>
-import HelloWorld from './components/HelloWorld.vue'
+import ConnectFour from './components/ConnectFour.vue'
+import ChatComponent from './components/ChatComponent.vue'
 
 export default {
   name: 'App',
   components: {
-    HelloWorld
+    ConnectFour,
+    ChatComponent
+  },
+  data() {
+    return {
+      username: null,
+    };
+  },
+  mounted() {
+    // Check if username exists in localStorage
+    const storedUsername = localStorage.getItem('username');
+    if (storedUsername) {
+      this.username = storedUsername;
+    } else {
+      // Prompt user to enter username through modal
+      this.promptUsername();
+    }
+  },
+  methods: {
+    promptUsername() {
+      const username = prompt('Please enter your username:');
+      if (username) {
+        // Store username in localStorage
+        localStorage.setItem('username', username);
+        this.username = username;
+      } else {
+        // Handle case where user cancels prompt
+        alert('You must enter a username.');
+        this.promptUsername();
+      }
+    }
   }
 }
 </script>
 
-<style>
-#app {
-  font-family: Avenir, Helvetica, Arial, sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  text-align: center;
-  color: #2c3e50;
-  margin-top: 60px;
-}
-</style>
+
+
+
