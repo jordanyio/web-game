@@ -22,43 +22,116 @@
         </div>
       </div>
       <div class="text-center">
-        <button @click="resetGame" class="btn btn-primary">Reset Game</button>
+        <div v-if="winMessage" class="alert alert-success" role="alert">
+          {{ winMessage }}
+        </div>
+      </div>
+      
+      <div class="text-center">
+        <button @click="resetGame" class="btn btn-primary mr-5">Play A Game!</button>
+        <button @click="resetGame" class="btn btn-primary ml-5">Reset Game</button>
       </div>
     </div>
   </template>
   
   <script>
-  //import { db, auth } from "@/firebase";
+  import { db } from "@/firebase";
+  import { collection, query, orderBy, getDocs, limit } from "firebase/firestore";
 
   export default {
     name: 'ConnectFour',
     data() {
       return {
-        currentPlayer: 1,
         board: Array(6).fill().map(() => Array(7).fill(0)), // 6 rows by 7 columns board
+        currentPlayer: '1',
+        player1: '',
+        player2: '',
+        playerCount: 0,
+        gameId: '',
+        gameOn: false,
         gameOver: false,
         winMessage: '', 
+        movesPerRowCount: [0,0,0,0,0,0,0]
       };
     },
-    methods: {
-        dropPiece(col) {
-            if (this.gameOver) {
-            
-                return; // Prevent any moves if the game is over
-            }
+    async mounted() {
+      while (this.playerCount < 2) {
+        await this.gameBuilder();
+        await this.animateGame();
 
-            for (let row = 5; row >= 0; row--) {
-                if (this.board[row][col] === 0) {
-                    this.board[row][col] = this.currentPlayer;
-                    if (this.checkWin()) {
-                        // Win logic is now handled within checkWin, so no need to do anything else here
-                        return; // Exit early if a win is detected
-                    }
-                    this.currentPlayer = this.currentPlayer === 1 ? 2 : 1; // Switch player if no win
-                    break;
-                }
-            }
-        },
+      }
+    },
+    methods: {
+
+      async animateGame(){
+      
+        let scaledNumber = await this.drawNumber();
+        while (this.movesPerRowCount[scaledNumber] > 5){
+          scaledNumber = await this.drawNumber();
+        }
+        this.movesPerRowCount[scaledNumber]++;
+        
+        await new Promise(resolve => setTimeout(resolve, 200));
+
+        this.dropPiece(scaledNumber);
+
+        if (this.gameOver || this.movesPerRowCount.reduce((accumulator, currentValue) => accumulator + currentValue, 0) >= 42){
+          this.movesPerRowCount.forEach((element, index) => {
+            this.movesPerRowCount[index] = 0;
+          });
+
+          await new Promise(resolve => setTimeout(resolve, 3000));
+
+          this.resetGame();
+        }
+      },
+
+      async drawNumber(){
+        const randomNumber = Math.random();
+        return Math.floor(randomNumber * 7); 
+      },
+
+      async gameBuilder() {
+        try {
+          const q = query(collection(db, "games"), orderBy("gameId", "desc"), limit(1));
+          const querySnapshot = await getDocs(q);
+          if (!querySnapshot.empty) {
+            const doc = querySnapshot.docs[0]; // Get the first document
+            let gameId = doc.data().gameId; // Retrieve the gameId property
+            this.gameId = gameId++;
+            return;
+          } else {
+            console.log("No games found.");
+            this.gameId = 1;
+            return;
+          }
+        
+        } catch (error) {
+          console.error("Error fetching gameId:", error);
+          this.error = "Error fetching game data. Please try again later.";
+          return;
+        }
+      },
+
+  
+
+      dropPiece(col) {
+          if (this.gameOver) {
+              return; // Prevent any moves if the game is over
+          }
+
+          for (let row = 5; row >= 0; row--) {
+              if (this.board[row][col] === 0) {
+                  this.board[row][col] = this.currentPlayer;
+                  if (this.checkWin()) {
+                      // Win logic is now handled within checkWin, so no need to do anything else here
+                      return; // Exit early if a win is detected
+                  }
+                  this.currentPlayer = this.currentPlayer === 1 ? 2 : 1; // Switch player if no win
+                  break;
+              }
+          }
+      },
 
 
       checkWin() {
