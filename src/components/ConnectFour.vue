@@ -1,7 +1,7 @@
 <template>
     <div class="container mt-5">
       <div class="text-center mb-4">
-        <h1>Connect Four</h1>
+        <h1>Connect Four Tournament</h1>
         <div v-if="winMessage" class="alert alert-success" role="alert">
           {{ winMessage }}
         </div>
@@ -16,7 +16,7 @@
             v-for="col in 7"
             :key="col"
             class="cell m-1"
-            :class="{ 'bg-danger': board[row - 1][col - 1] === 1, 'bg-warning': board[row - 1][col - 1] === 2 }"
+            :class="{ 'bg-danger': board[row - 1][col - 1] === '1', 'bg-warning': board[row - 1][col - 1] === '2' }"
             @click="dropPiece(col - 1)"
           ></div>
         </div>
@@ -28,26 +28,31 @@
       </div>
       
       <div class="text-center">
-        <button @click="resetGame" class="btn btn-primary mr-5">Play A Game!</button>
-        <button @click="resetGame" class="btn btn-primary ml-5">Reset Game</button>
+        <button @click="lookForGame" class="btn btn-primary mr-5">Play A Game!</button>
+        <button @click="resetGame" class="btn btn-danger ml-5">Reset Game!</button>
       </div>
     </div>
   </template>
   
   <script>
   import { db } from "@/firebase";
-  import { collection, query, orderBy, getDocs, limit } from "firebase/firestore";
+  import { collection, query, orderBy, getDocs, limit, where, updateDoc, onSnapshot, doc } from "firebase/firestore";
 
   export default {
     name: 'ConnectFour',
+    props: ['username', 'tournamentPlayers'],
     data() {
       return {
-        board: Array(6).fill().map(() => Array(7).fill(0)), // 6 rows by 7 columns board
+        board: Array(6).fill().map(() => Array(7).fill(0)),
         currentPlayer: '1',
+        currentPlayerName: '',
         player1: '',
         player2: '',
         playerCount: 0,
-        gameId: '',
+        playerMovingFirst: '',
+        playerUsernameLookingForGame: '',
+        isPlayerLookingForGame: false,
+        gameId: 0,
         gameOn: false,
         gameOver: false,
         winMessage: '', 
@@ -55,57 +60,225 @@
       };
     },
     async mounted() {
-      while (this.playerCount < 2) {
-        await this.gameBuilder();
-        await this.animateGame();
+      await new Promise(resolve => setTimeout(resolve, 100));
 
+      while (this.playerCount < 2) {
+        await this.animateGame();
       }
     },
     methods: {
 
       async animateGame(){
       
-        let scaledNumber = await this.drawNumber();
-        while (this.movesPerRowCount[scaledNumber] > 5){
-          scaledNumber = await this.drawNumber();
+        while (!this.gameOn){
+
+          let scaledNumber = await this.drawNumber();
+          while (this.movesPerRowCount[scaledNumber] > 5){
+            scaledNumber = await this.drawNumber();
+          }
+          this.movesPerRowCount[scaledNumber]++;
+          
+          await new Promise(resolve => setTimeout(resolve, 200));
+
+          this.dropPiece(scaledNumber);
+
+          if (this.gameOver || this.movesPerRowCount.reduce((accumulator, currentValue) => accumulator + currentValue, 0) >= 42){
+            this.movesPerRowCount.forEach((element, index) => {
+              this.movesPerRowCount[index] = 0;
+            });
+
+            await new Promise(resolve => setTimeout(resolve, 3000));
+
+            this.resetGame();
+          }
         }
-        this.movesPerRowCount[scaledNumber]++;
-        
-        await new Promise(resolve => setTimeout(resolve, 200));
 
-        this.dropPiece(scaledNumber);
-
-        if (this.gameOver || this.movesPerRowCount.reduce((accumulator, currentValue) => accumulator + currentValue, 0) >= 42){
-          this.movesPerRowCount.forEach((element, index) => {
-            this.movesPerRowCount[index] = 0;
-          });
-
-          await new Promise(resolve => setTimeout(resolve, 3000));
-
-          this.resetGame();
-        }
+        // incase the animation overwrites the random draw in lookForGame
+        this.currentPlayer = this.playerMovingFirst;
       },
 
-      async drawNumber(){
+      drawNumber(){
         const randomNumber = Math.random();
         return Math.floor(randomNumber * 7); 
       },
 
-      async gameBuilder() {
+      logVars(){
+        console.log('logging vars...')
+        console.log(
+        'username :' + this.username,
+        'currentPlayer :' + this.currentPlayer,
+        'currentPlayerName :' + this.currentPlayerName,
+        'player1 :' + this.player1,
+        'player2 :' + this.player2,
+        'playerCount :' + this.playerCount,
+        'playerUsernameLookingForGame :' + this.playerUsernameLookingForGame,
+        'isPlayerLookingForGame :' + this.isPlayerLookingForGame,
+        'gameId :' + this.gameId,
+        'gameOn :' + this.gameOn,
+        'gameOver :' + this.gameOver)
+      },
+
+      async lookForGame(){
+
+        this.playerUsernameLookingForGame = this.username;
+        this.isPlayerLookingForGame = true;
+
+
+
+        await this.logVars();
+        await this.setGameId();
+        await this.logVars();
+        await this.subscribeToGame();
+        await this.logVars();
+
+        const querySnapshot = await this.getGame();
+
+        let doc = querySnapshot.docs[0];
+        let docRef = doc.ref; 
+
+        if (this.player1 == ""){
+          this.player1 = this.username;
+          await this.updateGameDoc(docRef);
+          console.log('hit here')
+        
+          await this.logVars();
+        } else if (this.player1 != this.username && this.player1 != ""){
+          this.player2 = this.username;
+          await this.updateGameDoc(docRef);
+          await this.logVars();
+        }
+
+        if (this.player1 == this.username && this.player2 == ""){
+          console.log('player one has joined the game.')
+        } else if ( this.player2 == this.username && this.player1 != this.username && this.player1 != ""){
+          console.log('player two has joined the game')
+          console.log('starting game...')
+
+          this.gameOn = true;
+          this.isPlayerLookingForGame = false;
+
+          // Randomly select who moves first
+          const randomNumber = Math.random();
+
+          let oneOrTwo = randomNumber < 0.5 ? 1 : 2;
+
+          if (oneOrTwo == 1){ 
+            this.currentPlayerName = this.player1;
+            this.currentPlayer = '1';
+            this.playerMovingFirst = '1';
+          } else { 
+            this.currentPlayerName = this.player2;
+            this.currentPlayer = '2';
+            this.playerMovingFirst = '2';
+          }
+
+          await this.updateGameDoc(docRef);
+          
+
+        }
+        
+        console.log('end of lookForGame')
+      },
+
+      async subscribeToGame() {
         try {
-          const q = query(collection(db, "games"), orderBy("gameId", "desc"), limit(1));
-          const querySnapshot = await getDocs(q);
+          const q = query(collection(db, 'games'), where('gameId', '==', this.gameId));
+          onSnapshot(q, (querySnapshot) => {
+              if (!querySnapshot.empty) {
+                  const docData = querySnapshot.docs[0].data();
+                  if (docData) {
+                      // Update component's state with document data
+                      this.currentPlayer = docData.currentPlayer;
+                      this.currentPlayerName = docData.currentPlayerName;
+                      this.player1 = docData.player1;
+                      this.player2 = docData.player2;
+                      this.playerCount = docData.playerCount;
+                      this.playerUsernameLookingForGame = docData.playerUsernameLookingForGame;
+                      this.isPlayerLookingForGame = docData.isPlayerLookingForGame;
+                      this.gameId = docData.gameId;
+                      this.gameOn = docData.gameOn;
+                      this.gameOver = docData.gameOver;
+                  } else {
+                      console.log("Document data is empty.");
+                  }
+              } else {
+                  console.log("No game document found.");
+              }
+          }, (error) => {
+              console.error("Error in onSnapshot:", error);
+              this.error = "Error fetching game state. Please try again later.";
+          });
+          // Store the unsubscribe function if needed to later stop listening to changes
+          // this.unsubscribe = unsubscribe;
+        } catch (error) {
+            console.error("Error fetching game state:", error);
+            this.error = "Error fetching game state. Please try again later.";
+        }
+    },
+
+    async updateDocument() {
+      try {
+          const docRef = doc(collection(db, 'games'), this.gameId);
+          await updateDoc(docRef, {
+              currentPlayer: this.currentPlayer,
+              player1: this.player1,
+              player2: this.player2,
+              playerCount: this.playerCount,
+              playerUsernameLookingForGame: this.playerUsernameLookingForGame,
+              isPlayerLookingForGame: this.isPlayerLookingForGame,
+              gameId: this.gameId,
+              gameOn: this.gameOn,
+              gameOver: this.gameOver,
+          });
+
+          if (this.gameOn){
+            await updateDoc(docRef, {
+              board: this.board
+            })
+          }
+          console.log("Document updated successfully.");
+      } catch (error) {
+          console.error("Error updating document:", error);
+          this.error = "Error updating game state. Please try again later.";
+      }
+    },
+
+
+
+      async getGame(){
+        const q = query(collection(db, "games"), orderBy("gameId", "desc"), limit(1));
+          return await getDocs(q);
+      },
+  
+      async setGameId() {
+        try {
+          //const q = query(collection(db, "games"), orderBy("gameId", "desc"), limit(1));
+          const querySnapshot = await this.getGame();
+          console.log("Documents:", querySnapshot.docs);
+
           if (!querySnapshot.empty) {
-            const doc = querySnapshot.docs[0]; // Get the first document
-            let gameId = doc.data().gameId; // Retrieve the gameId property
-            this.gameId = gameId++;
-            return;
+            const doc = querySnapshot.docs[0];
+            const docData = doc.data(); 
+            const docRef = doc.ref; 
+
+            let docGameId = docData.gameId;
+            if (docData.player1 === "" || docData.player2 === "" && docGameId > 0){
+              this.gameId = docGameId; 
+              await this.updateGameDoc(docRef);
+              console.log("hit 1 ", docGameId )
+            } else {
+              docGameId++;
+              this.gameId = docGameId;
+              console.log("hit 2 ", docGameId )
+
+              await this.addGameDoc();
+            }
           } else {
             console.log("No games found.");
             this.gameId = 1;
-            return;
           }
-        
+          return;
+
         } catch (error) {
           console.error("Error fetching gameId:", error);
           this.error = "Error fetching game data. Please try again later.";
@@ -113,26 +286,89 @@
         }
       },
 
-  
+      async updateGameDoc(docRef){
+        console.log('docRef! :' + docRef)
+        await updateDoc(docRef, {
+          currentPlayer: this.currentPlayer,
+          currentPlayerName: this.currentPlayerName,
+          player1: this.player1,
+          player2: this.player2,
+          playerCount: this.playerCount,
+          playerUsernameLookingForGame: this.playerUsernameLookingForGame,
+          isPlayerLookingForGame: this.isPlayerLookingForGame,
+          gameId: this.gameId,
+          gameOn: this.gameOn,
+          gameOver: this.gameOver,
+        });
 
-      dropPiece(col) {
+        if (this.gameOn){
+          await updateDoc(docRef, {
+            board: this.board
+          })
+        }
+      },
+
+      async addGameDoc(){
+        await db.collection('games').addDoc({
+          currentPlayer: this.currentPlayer,
+          currentPlayerName: this.currentPlayerName,
+          player1: this.player1,
+          player2: this.player2,
+          playerCount: this.playerCount,
+          playerUsernameLookingForGame: this.playerUsernameLookingForGame,
+          isPlayerLookingForGame: this.isPlayerLookingForGame,
+          gameId: this.gameId,
+          gameOn: this.gameOn,
+          gameOver: this.gameOver,
+        });
+      },
+
+      async dropPiece(col) {
           if (this.gameOver) {
-              return; // Prevent any moves if the game is over
+              return; // Prevent any moves if the game is over or not on
           }
+
+          if (this.gameOn){
+            if (this.currentPlayerName == this.player1 && this.currentPlayer != '1'){
+            // this will prevent a player from moving when its not their turn 
+            // TODO alert them that its the other players turn
+            
+              return;
+            }
+
+            if (this.currentPlayerName == this.player2 && this.currentPlayer != '2'){
+              // this will prevent a player from moving when its not their turn 
+              // TODO alert them that its the other players turn
+              
+              return;
+            }
+          }
+
+
 
           for (let row = 5; row >= 0; row--) {
               if (this.board[row][col] === 0) {
                   this.board[row][col] = this.currentPlayer;
                   if (this.checkWin()) {
                       // Win logic is now handled within checkWin, so no need to do anything else here
-                      return; // Exit early if a win is detected
+                      return; 
                   }
-                  this.currentPlayer = this.currentPlayer === 1 ? 2 : 1; // Switch player if no win
+                  this.currentPlayer = this.currentPlayer === '1' ? '2' : '1';
+                  this.currentPlayerName = this.currentPlayerName === this.player1 ? this.player2 : this.player1; // Switch player if no win
+                  
+                  await this.updateGameDoc;
+                  
                   break;
+                  // if (this.gameOn){
+                  //   this.currentPlayer = this.currentPlayer === this.player1 ? this.player2 : this.player1; // Switch player if no win
+                  //   break;
+                  // } else {
+                  //   this.currentPlayer = this.currentPlayer === '1' ? '2' : '1'; // Switch player if no win
+                  //   break;
+                  // }
               }
           }
       },
-
 
       checkWin() {
         const directions = [
@@ -175,10 +411,20 @@
             return false; 
     },
       resetGame() {
+
+        if (this.gameOn){
+          this.board = Array(6).fill().map(() => Array(7).fill(0));
+          this.gameOver = false;
+          this.winMessage = '';
+          return;
+        }
+
         this.board = Array(6).fill().map(() => Array(7).fill(0));
-        this.currentPlayer = 1;
+        this.currentPlayer = '1';
         this.gameOver = false;
         this.winMessage = '';
+        this.gameOn = false;
+        this.animateGame;
       },
     },
   };

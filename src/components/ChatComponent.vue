@@ -62,6 +62,7 @@ export default {
         this.error = "Error fetching messages. Please try again later.";
       }
     },
+    
     async sendMessage() {
       try {
         if (!this.newMessage.trim()) return;

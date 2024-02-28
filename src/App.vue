@@ -1,23 +1,43 @@
 <template>
+  
   <div id="app">
-    <ConnectFour :username="username" />
+    <div>
+      <TournamentJumbotron :tournamentPlayers="tournamentPlayers" :username="username"></TournamentJumbotron>
+    </div>
+
+    <ConnectFour :username="username" :tournamentPlayers="tournamentPlayers"/>
+
+    <div class="card">
+      <TournamentBracket :bracket-size="16"></TournamentBracket>
+    </div>
+
     <ChatComponent :gameId="username" :username="username" />
   </div>
 </template>
 
 <script>
+
+import { db } from "@/firebase";
+import { collection, getDocs } from "firebase/firestore";
+
 import ConnectFour from './components/ConnectFour.vue'
 import ChatComponent from './components/ChatComponent.vue'
+import TournamentBracket from './components/Bracket.vue'
+import TournamentJumbotron from './components/TournamentJumbotron.vue';
+
 
 export default {
   name: 'App',
   components: {
     ConnectFour,
-    ChatComponent
+    ChatComponent,
+    TournamentBracket,
+    TournamentJumbotron
   },
   data() {
     return {
       username: null,
+      tournamentPlayers: []
     };
   },
   mounted() {
@@ -29,8 +49,22 @@ export default {
       // Prompt user to enter username through modal
       this.promptUsername();
     }
+
+    this.fetchPlayers();
   },
   methods: {
+    async fetchPlayers() {
+      try {
+        const querySnapshot = await getDocs(collection(db, "Players"));
+        this.tournamentPlayers = querySnapshot.docs.map(doc => ({
+          PlayerName: doc.data().PlayerName,
+          userId: doc.data().userId // Assuming the document ID is the userId
+        }));
+      } catch (error) {
+        console.error("Error fetching players:", error);
+      }
+      console.log(this.tournamentPlayers)
+    },
     promptUsername() {
       const username = prompt('Please enter your username:');
       if (username) {
@@ -49,4 +83,10 @@ export default {
 
 
 
+<style>
+.card { 
+  margin: 32px;
+}
 
+
+</style>
