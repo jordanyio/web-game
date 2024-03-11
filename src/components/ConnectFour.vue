@@ -28,9 +28,10 @@
       </div>
       
       <div class="text-center">
-        <button @click="lookForGame" class="btn btn-primary mr-5">Play A Game!</button>
-        <button @click="resetGame" class="btn btn-danger ml-5">Reset Game!</button>
+        <!-- <button @click="lookForGame" class="btn btn-primary mr-5">Play A Game!</button>
+        <button @click="resetGame" class="btn btn-danger ml-5">Reset Game!</button> -->
       </div>
+      <p>Match Number: {{ matchNumber }}</p>
     </div>
   </template>
   
@@ -40,10 +41,11 @@
 
   export default {
     name: 'ConnectFour',
-    props: ['username', 'tournamentPlayers'],
+    props: ['username', 'tournamentPlayers', 'matchNumber'],
     data() {
       return {
         board: Array(6).fill().map(() => Array(7).fill(0)),
+        winnerId: "",
         currentPlayer: '1',
         currentPlayerName: '',
         player1: '',
@@ -61,10 +63,12 @@
     },
     async mounted() {
       await new Promise(resolve => setTimeout(resolve, 100));
+      console.log("Received match number:", this.matchNumber);
 
-      while (this.playerCount < 2) {
+      while (this.playerCount < 2 && !this.matchNumber) {
         await this.animateGame();
       }
+      this.subscribeToMatch();
     },
     methods: {
 
@@ -97,6 +101,51 @@
         this.currentPlayer = this.playerMovingFirst;
       },
 
+      subscribeToMatch() {
+        // Assuming this.matchNumber is already set to the specific match you want to subscribe to
+        console.log("Subscribing to match with matchNumber:", this.matchNumber);
+
+        // Define the query to select the match by matchNumber
+        const matchRef = query(collection(db, "Matches"), where("matchNumber", "==", this.matchNumber));
+
+        // Subscribe to updates on the match document with the specified matchNumber
+        this.unsubscribe = onSnapshot(matchRef, (snapshot) => {
+          if (!snapshot.empty) {
+            // Assuming there's only one document with this matchNumber
+            const matchData = snapshot.docs[0].data();
+            console.log("Received match data:", matchData);
+
+            // Here, update your component's data with the match information
+            this.board = matchData.board ? JSON.parse(matchData.board) : this.board;
+            this.player1 = matchData.player1ID;
+            this.player2 = matchData.player2ID;
+            // Handle other necessary updates based on the match data
+          } else {
+            console.error("No match found with matchNumber:", this.matchNumber);
+          }
+        }, (error) => {
+          console.error("Error subscribing to match:", error);
+        });
+      },
+
+      async updateMatch() {
+        console.log("Board: ", this.board)
+        const matchRef = query(collection(db, "Matches"), where("matchNumber", "==", this.matchNumber));
+        const snapshot = await getDocs(matchRef);
+        if (!snapshot.empty) {
+          const docRef = snapshot.docs[0].ref;
+          await updateDoc(docRef, {
+            board: JSON.stringify(this.board),
+            gameOver: this.gameOver,
+            winnerId: this.winnerId,
+            // Add other fields you might want to update, e.g., currentPlayer
+          });
+        } else {
+          console.error("No match found to update");
+        }
+        console.log("Match updated.")
+      },
+
       drawNumber(){
         const randomNumber = Math.random();
         return Math.floor(randomNumber * 7); 
@@ -118,103 +167,8 @@
         'gameOver :' + this.gameOver)
       },
 
-      async lookForGame(){
+    
 
-        this.playerUsernameLookingForGame = this.username;
-        this.isPlayerLookingForGame = true;
-
-
-
-        await this.logVars();
-        await this.setGameId();
-        await this.logVars();
-        await this.subscribeToGame();
-        await this.logVars();
-
-        const querySnapshot = await this.getGame();
-
-        let doc = querySnapshot.docs[0];
-        let docRef = doc.ref; 
-
-        if (this.player1 == ""){
-          this.player1 = this.username;
-          await this.updateGameDoc(docRef);
-          console.log('hit here')
-        
-          await this.logVars();
-        } else if (this.player1 != this.username && this.player1 != ""){
-          this.player2 = this.username;
-          await this.updateGameDoc(docRef);
-          await this.logVars();
-        }
-
-        if (this.player1 == this.username && this.player2 == ""){
-          console.log('player one has joined the game.')
-        } else if ( this.player2 == this.username && this.player1 != this.username && this.player1 != ""){
-          console.log('player two has joined the game')
-          console.log('starting game...')
-
-          this.gameOn = true;
-          this.isPlayerLookingForGame = false;
-
-          // Randomly select who moves first
-          const randomNumber = Math.random();
-
-          let oneOrTwo = randomNumber < 0.5 ? 1 : 2;
-
-          if (oneOrTwo == 1){ 
-            this.currentPlayerName = this.player1;
-            this.currentPlayer = '1';
-            this.playerMovingFirst = '1';
-          } else { 
-            this.currentPlayerName = this.player2;
-            this.currentPlayer = '2';
-            this.playerMovingFirst = '2';
-          }
-
-          await this.updateGameDoc(docRef);
-          
-
-        }
-        
-        console.log('end of lookForGame')
-      },
-
-      async subscribeToGame() {
-        try {
-          const q = query(collection(db, 'games'), where('gameId', '==', this.gameId));
-          onSnapshot(q, (querySnapshot) => {
-              if (!querySnapshot.empty) {
-                  const docData = querySnapshot.docs[0].data();
-                  if (docData) {
-                      // Update component's state with document data
-                      this.currentPlayer = docData.currentPlayer;
-                      this.currentPlayerName = docData.currentPlayerName;
-                      this.player1 = docData.player1;
-                      this.player2 = docData.player2;
-                      this.playerCount = docData.playerCount;
-                      this.playerUsernameLookingForGame = docData.playerUsernameLookingForGame;
-                      this.isPlayerLookingForGame = docData.isPlayerLookingForGame;
-                      this.gameId = docData.gameId;
-                      this.gameOn = docData.gameOn;
-                      this.gameOver = docData.gameOver;
-                  } else {
-                      console.log("Document data is empty.");
-                  }
-              } else {
-                  console.log("No game document found.");
-              }
-          }, (error) => {
-              console.error("Error in onSnapshot:", error);
-              this.error = "Error fetching game state. Please try again later.";
-          });
-          // Store the unsubscribe function if needed to later stop listening to changes
-          // this.unsubscribe = unsubscribe;
-        } catch (error) {
-            console.error("Error fetching game state:", error);
-            this.error = "Error fetching game state. Please try again later.";
-        }
-    },
 
     async updateDocument() {
       try {
@@ -325,10 +279,12 @@
 
       async dropPiece(col) {
           if (this.gameOver) {
+            console.log("Case 1 hit")
               return; // Prevent any moves if the game is over or not on
           }
 
           if (this.gameOn){
+            console.log("Case 2 hit")
             if (this.currentPlayerName == this.player1 && this.currentPlayer != '1'){
             // this will prevent a player from moving when its not their turn 
             // TODO alert them that its the other players turn
@@ -339,24 +295,39 @@
             if (this.currentPlayerName == this.player2 && this.currentPlayer != '2'){
               // this will prevent a player from moving when its not their turn 
               // TODO alert them that its the other players turn
-              
+              console.log("Case 3 hit")
               return;
             }
           }
 
 
-
+          
           for (let row = 5; row >= 0; row--) {
               if (this.board[row][col] === 0) {
                   this.board[row][col] = this.currentPlayer;
                   if (this.checkWin()) {
                       // Win logic is now handled within checkWin, so no need to do anything else here
+                      if (this.matchNumber){
+                        if (this.currentPlayer == '1'){
+                          this.winnerId = this.player1
+                        } else {
+                          this.winnerId = this.player2
+                        }
+                        this.gameOver = true;
+                        this.updateMatch();
+                      }
                       return; 
                   }
                   this.currentPlayer = this.currentPlayer === '1' ? '2' : '1';
                   this.currentPlayerName = this.currentPlayerName === this.player1 ? this.player2 : this.player1; // Switch player if no win
                   
                   await this.updateGameDoc;
+                  if (this.matchNumber > 0) {
+                    console.log("This.board = ", this.board)
+                    
+                    this.updateMatch();
+                  }
+                      
                   
                   break;
                   // if (this.gameOn){
@@ -367,6 +338,8 @@
                   //   break;
                   // }
               }
+              
+              
           }
       },
 

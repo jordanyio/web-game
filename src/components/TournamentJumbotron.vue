@@ -13,6 +13,9 @@
     <h3 v-else>Good Luck, {{ username }}!</h3>
     <!-- Ready Up Button -->
     <button v-if="!isPlayerReady" class="btn btn-success" @click="readyUp">Ready Up</button>
+    <div>
+      <button class="btn btn-warning play-match-btn" @click="playMatch">Click here to play your match</button>
+    </div>
   </div>
 </template>
   
@@ -83,6 +86,53 @@
           console.error("Error updating player status:", error);
         }
       },
+      async playMatch() {
+        try {
+          // Step 1: Query the Players Collection to find the player's ID
+          const playersRef = collection(db, "Players");
+          const qPlayer = query(playersRef, where("PlayerName", "==", this.username));
+          const playerSnapshot = await getDocs(qPlayer);
+          
+          if (playerSnapshot.empty) {
+            console.log(this.username)
+            alert("Player not found.");
+            return; // Stop if no player is found
+          }
+
+          const playerId = playerSnapshot.docs[0].data().userId; 
+          console.log(playerId)// Assuming unique usernames
+
+          // Step 2: Query the Matches Collection
+          const matchesRef = collection(db, "Matches");
+          const qMatch1 = query(matchesRef, where("player1ID", "==", playerId));
+          const matchSnapshot1 = await getDocs(qMatch1);
+
+          // Second query for player2ID
+          const qMatch2 = query(matchesRef, where("player2ID", "==", playerId));
+          const matchSnapshot2 = await getDocs(qMatch2);
+
+          // Combine the results
+          const matches = [...matchSnapshot1.docs, ...matchSnapshot2.docs];
+
+          if (matches.length === 0) {
+            alert("No match found for you right now!");
+            return; // Exit if no match is found
+          }
+
+          // Assuming we take the first match found
+          const match = matches[0].data(); // Using the first match for demonstration
+          const matchNumber = match.matchNumber;
+
+          // Navigate to the LiveGame route with matchNumber as a param
+          this.$router.push({ name: 'LiveGame', params: { matchNumber: `${matchNumber}` } });
+
+
+        } catch (error) {
+          console.error("Error fetching match details:", error);
+          alert("There was an issue fetching your match. Please try again later.");
+        }
+      },
+
 
     }
   };
