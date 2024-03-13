@@ -37,17 +37,19 @@
   
   <script>
   import { db } from "@/firebase";
-  import { collection, query, orderBy, getDocs, limit, where, updateDoc, onSnapshot, doc } from "firebase/firestore";
+  import { collection, query, orderBy, getDocs, limit, where, updateDoc, onSnapshot } from "firebase/firestore";
 
   export default {
     name: 'ConnectFour',
-    props: ['username', 'tournamentPlayers', 'matchNumber'],
+    props: ['tournamentPlayers', 'matchNumber'],
     data() {
       return {
         board: Array(6).fill().map(() => Array(7).fill(0)),
+        Username: '',
         winnerId: "",
         currentPlayer: '1',
-        currentPlayerName: '',
+        Player1Name: '',
+        Player2Name: '',
         player1: '',
         player2: '',
         playerCount: 0,
@@ -58,7 +60,7 @@
         gameOn: false,
         gameOver: false,
         winMessage: '', 
-        movesPerRowCount: [0,0,0,0,0,0,0]
+        movesPerRowCount: [0,0,0,0,0,0,0],
       };
     },
     async mounted() {
@@ -69,9 +71,15 @@
         await this.animateGame();
       }
       this.subscribeToMatch();
+      this.Username = this.username;
+    },
+    computed: {
+      username() {
+        return this.$store.getters.getUsername;
+      },
     },
     methods: {
-
+      
       async animateGame(){
       
         while (!this.gameOn){
@@ -101,7 +109,8 @@
         this.currentPlayer = this.playerMovingFirst;
       },
 
-      subscribeToMatch() {
+      async subscribeToMatch() {
+        this.gameOn = true;
         // Assuming this.matchNumber is already set to the specific match you want to subscribe to
         console.log("Subscribing to match with matchNumber:", this.matchNumber);
 
@@ -119,6 +128,9 @@
             this.board = matchData.board ? JSON.parse(matchData.board) : this.board;
             this.player1 = matchData.player1ID;
             this.player2 = matchData.player2ID;
+            this.Player1Name = matchData.Player1;
+            this.Player2Name = matchData.Player2;
+            this.currentPlayer = matchData.currentPlayer;
             // Handle other necessary updates based on the match data
           } else {
             console.error("No match found with matchNumber:", this.matchNumber);
@@ -126,6 +138,8 @@
         }, (error) => {
           console.error("Error subscribing to match:", error);
         });
+
+        await this.fetchPlayerNames();
       },
 
       async updateMatch() {
@@ -138,12 +152,15 @@
             board: JSON.stringify(this.board),
             gameOver: this.gameOver,
             winnerId: this.winnerId,
+            currentPlayer: this.currentPlayer
             // Add other fields you might want to update, e.g., currentPlayer
           });
         } else {
           console.error("No match found to update");
         }
         console.log("Match updated.")
+       
+        
       },
 
       drawNumber(){
@@ -151,53 +168,33 @@
         return Math.floor(randomNumber * 7); 
       },
 
-      logVars(){
-        console.log('logging vars...')
-        console.log(
-        'username :' + this.username,
-        'currentPlayer :' + this.currentPlayer,
-        'currentPlayerName :' + this.currentPlayerName,
-        'player1 :' + this.player1,
-        'player2 :' + this.player2,
-        'playerCount :' + this.playerCount,
-        'playerUsernameLookingForGame :' + this.playerUsernameLookingForGame,
-        'isPlayerLookingForGame :' + this.isPlayerLookingForGame,
-        'gameId :' + this.gameId,
-        'gameOn :' + this.gameOn,
-        'gameOver :' + this.gameOver)
-      },
+      async fetchPlayerNames() {
+        try {
+          const playersRef = collection(db, "Players");
+          // Ensure `this.player1` and `this.player2` are not undefined or null
+          if (this.player1 && this.player2) {
+            const q = query(playersRef, where("userId", "in", [this.player1, this.player2]));
+            const snapshot = await getDocs(q);
 
-    
+            snapshot.forEach(doc => {
+              const data = doc.data();
+              if (data.userId === this.player1) {
+                this.Player1Name = data.PlayerName;
+              } else if (data.userId === this.player2) {
+                this.Player2Name = data.PlayerName;
+              }
+            });
 
-
-    async updateDocument() {
-      try {
-          const docRef = doc(collection(db, 'games'), this.gameId);
-          await updateDoc(docRef, {
-              currentPlayer: this.currentPlayer,
-              player1: this.player1,
-              player2: this.player2,
-              playerCount: this.playerCount,
-              playerUsernameLookingForGame: this.playerUsernameLookingForGame,
-              isPlayerLookingForGame: this.isPlayerLookingForGame,
-              gameId: this.gameId,
-              gameOn: this.gameOn,
-              gameOver: this.gameOver,
-          });
-
-          if (this.gameOn){
-            await updateDoc(docRef, {
-              board: this.board
-            })
+            if (snapshot.empty) {
+              console.log("No matching players found.");
+            }
+          } else {
+            console.error("Player1 or Player2 ID is missing.");
           }
-          console.log("Document updated successfully.");
-      } catch (error) {
-          console.error("Error updating document:", error);
-          this.error = "Error updating game state. Please try again later.";
-      }
-    },
-
-
+        } catch (error) {
+          console.error("Error fetching player names:", error);
+        }
+      },
 
       async getGame(){
         const q = query(collection(db, "games"), orderBy("gameId", "desc"), limit(1));
@@ -240,106 +237,71 @@
         }
       },
 
-      async updateGameDoc(docRef){
-        console.log('docRef! :' + docRef)
-        await updateDoc(docRef, {
-          currentPlayer: this.currentPlayer,
-          currentPlayerName: this.currentPlayerName,
-          player1: this.player1,
-          player2: this.player2,
-          playerCount: this.playerCount,
-          playerUsernameLookingForGame: this.playerUsernameLookingForGame,
-          isPlayerLookingForGame: this.isPlayerLookingForGame,
-          gameId: this.gameId,
-          gameOn: this.gameOn,
-          gameOver: this.gameOver,
-        });
-
-        if (this.gameOn){
-          await updateDoc(docRef, {
-            board: this.board
-          })
-        }
-      },
-
-      async addGameDoc(){
-        await db.collection('games').addDoc({
-          currentPlayer: this.currentPlayer,
-          currentPlayerName: this.currentPlayerName,
-          player1: this.player1,
-          player2: this.player2,
-          playerCount: this.playerCount,
-          playerUsernameLookingForGame: this.playerUsernameLookingForGame,
-          isPlayerLookingForGame: this.isPlayerLookingForGame,
-          gameId: this.gameId,
-          gameOn: this.gameOn,
-          gameOver: this.gameOver,
-        });
-      },
 
       async dropPiece(col) {
-          if (this.gameOver) {
-            console.log("Case 1 hit")
-              return; // Prevent any moves if the game is over or not on
+        if (this.checkWin()) {
+          // Win logic is now handled within checkWin, so no need to do anything else here
+          if (this.matchNumber){
+            if (this.currentPlayer == '1'){
+              this.winnerId = this.player1
+            } else {
+              this.winnerId = this.player2
+            }
+            this.gameOver = true;
+            this.updateMatch();
+          }
+          return; 
+        }
+
+        if (this.gameOver) {
+          console.log("Case 1 hit")
+            return; // Prevent any moves if the game is over or not on
+        }
+
+        if (this.gameOn){
+        
+          if (this.username == this.Player1Name && this.currentPlayer != '1'){
+          // this will prevent a player from moving when its not their turn 
+          // TODO alert them that its the other players turn
+          
+            return;
           }
 
-          if (this.gameOn){
-            console.log("Case 2 hit")
-            if (this.currentPlayerName == this.player1 && this.currentPlayer != '1'){
+          if (this.username == this.Player2Name && this.currentPlayer != '2'){
             // this will prevent a player from moving when its not their turn 
             // TODO alert them that its the other players turn
-            
-              return;
-            }
-
-            if (this.currentPlayerName == this.player2 && this.currentPlayer != '2'){
-              // this will prevent a player from moving when its not their turn 
-              // TODO alert them that its the other players turn
-              console.log("Case 3 hit")
-              return;
-            }
+     
+            return;
           }
+        }
 
-
-          
-          for (let row = 5; row >= 0; row--) {
-              if (this.board[row][col] === 0) {
-                  this.board[row][col] = this.currentPlayer;
-                  if (this.checkWin()) {
-                      // Win logic is now handled within checkWin, so no need to do anything else here
-                      if (this.matchNumber){
-                        if (this.currentPlayer == '1'){
-                          this.winnerId = this.player1
-                        } else {
-                          this.winnerId = this.player2
-                        }
-                        this.gameOver = true;
-                        this.updateMatch();
+        for (let row = 5; row >= 0; row--) {
+            if (this.board[row][col] === 0) {
+                this.board[row][col] = this.currentPlayer;
+                if (this.checkWin()) {
+                    // Win logic is now handled within checkWin, so no need to do anything else here
+                    if (this.matchNumber){
+                      if (this.currentPlayer == '1'){
+                        this.winnerId = this.player1
+                      } else {
+                        this.winnerId = this.player2
                       }
-                      return; 
-                  }
-                  this.currentPlayer = this.currentPlayer === '1' ? '2' : '1';
-                  this.currentPlayerName = this.currentPlayerName === this.player1 ? this.player2 : this.player1; // Switch player if no win
+                      this.gameOver = true;
+                      this.updateMatch();
+                    }
+                    return; 
+                }
+                this.currentPlayer = this.currentPlayer === '1' ? '2' : '1';
+                this.currentPlayerName = this.currentPlayerName === this.player1 ? this.player2 : this.player1; // Switch player if no win
+                
+                await this.updateGameDoc;
+                if (this.matchNumber > 0) {
+                  console.log("This.board = ", this.board)
                   
-                  await this.updateGameDoc;
-                  if (this.matchNumber > 0) {
-                    console.log("This.board = ", this.board)
-                    
-                    this.updateMatch();
-                  }
-                      
-                  
-                  break;
-                  // if (this.gameOn){
-                  //   this.currentPlayer = this.currentPlayer === this.player1 ? this.player2 : this.player1; // Switch player if no win
-                  //   break;
-                  // } else {
-                  //   this.currentPlayer = this.currentPlayer === '1' ? '2' : '1'; // Switch player if no win
-                  //   break;
-                  // }
-              }
-              
-              
+                  this.updateMatch();
+                }
+                break;
+            }
           }
       },
 
@@ -352,37 +314,39 @@
         ];
 
         const checkDirection = (direction) => {
-            for (let row = 0; row < 6; row++) {
-                for (let col = 0; col < 7; col++) {
-                    const initialCell = this.board[row][col];
-                    if (initialCell === 0) continue;
+          for (let row = 0; row < 6; row++) {
+              for (let col = 0; col < 7; col++) {
+                  const initialCell = this.board[row][col];
+                  if (initialCell === 0) continue;
 
-                    let win = true;
-                    for (let i = 1; i < 4; i++) {
-                        const newRow = row + direction.increment.row * i;
-                        const newCol = col + direction.increment.col * i;
+                  let win = true;
+                  for (let i = 1; i < 4; i++) {
+                      const newRow = row + direction.increment.row * i;
+                      const newCol = col + direction.increment.col * i;
 
-                        if (newRow < 0 || newRow >= 6 || newCol < 0 || newCol >= 7 || this.board[newRow][newCol] !== initialCell) {
-                        win = false;
-                        break;
-                        }
-                    }
+                      if (newRow < 0 || newRow >= 6 || newCol < 0 || newCol >= 7 || this.board[newRow][newCol] !== initialCell) {
+                      win = false;
+                      break;
+                      }
+                  }
 
-                    if (win) return true;
-                }
-            }
-            return false;
-            };
+                  if (win) return true;
+              }
+          }
 
-            for (const direction of directions) {
-                if (checkDirection(direction)) {
-                    this.gameOver = true; // Indicate the game is over
-                    this.winMessage = `Player ${this.currentPlayer} wins!`; // Set the win message
-                    return true; // You don't need to show alert here anymore
-                }
-            }
-            return false; 
-    },
+          return false;
+          };
+
+          for (const direction of directions) {
+              if (checkDirection(direction)) {
+                  this.gameOver = true; // Indicate the game is over
+                  this.winMessage = `Player ${this.currentPlayer} wins!`; // Set the win message
+                  return true; // You don't need to show alert here anymore
+              }
+          }
+          return false; 
+      },
+
       resetGame() {
 
         if (this.gameOn){

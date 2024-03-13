@@ -49,10 +49,14 @@
         // Prompt user to enter username through modal
         this.promptUsername();
       }
+      this.updateUsername(this.username);
   
       this.fetchPlayers();
     },
     methods: {
+      updateUsername(newValue) {
+        this.$store.commit('updateUsername', newValue);
+      },
       async fetchPlayers() {
         try {
           const querySnapshot = await getDocs(collection(db, "Players"));
