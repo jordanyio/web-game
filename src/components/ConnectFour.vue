@@ -6,7 +6,7 @@
           {{ winMessage }}
         </div>
         <div v-if="!gameOver" class="turn-indicator">
-          Player <span class="font-weight-bold" :class="`player-${currentPlayer}-color`"> {{ currentPlayer }} </span>'s turn
+          {{ turnMessage }}
         </div>
       </div>
   
@@ -77,9 +77,21 @@
       username() {
         return this.$store.getters.getUsername;
       },
+      turnMessage() {
+        if (this.gameOn) {
+          const playerName = this.currentPlayer === '1' ? this.Player1Name : this.Player2Name;
+          if (playerName == this.Username){
+            return `It's your turn, ${playerName}!`
+          }
+          return `It's ${playerName}'s turn`;
+        } else {
+          // Default message when the game is not on
+          return `Player ${this.currentPlayer}'s turn`;
+        }
+      },
     },
     methods: {
-      
+
       async animateGame(){
       
         while (!this.gameOn){
